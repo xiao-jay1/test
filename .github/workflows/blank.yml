@@ -1,0 +1,48 @@
+# .github\workflows\blog.yml
+name: Blog
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 20 * * *" # 注意，GitHub Action的时区为UTC+0，与北京时间（UTC+8）存在时差，所以需要换算下时间。
+jobs:
+  blog:
+    name: Blog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          persist-credentials: false # otherwise, the token used is the GITHUB_TOKEN, instead of your personal access token.
+          fetch-depth: 0 # otherwise, there would be errors pushing refs to the destination repository.
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v3
+        with:
+          node-version: "16"
+      - name: Get yarn cache directory path
+        id: yarn-cache-dir-path
+        run: echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
+      - uses: actions/cache@v3
+        id: yarn-cache # use this to check for `cache-hit` (`steps.yarn-cache.outputs.cache-hit != 'true'`)
+        with:
+          path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
+          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: ${{ runner.os }}-yarn-
+      - run: yarn
+      - run: npm run start
+      - name: Commit files 
+        id: commit-files
+        run: |
+          if [ -n "$(git status --porcelain README.md)" ]; then
+            git config --local user.email "github-actions[bot]@users.noreply.github.com"
+            git config --local user.name "github-actions[bot]"
+            git add README.md
+            git commit -m "docs: update blog"
+            echo "hasChange=true" >> $GITHUB_OUTPUT
+          else
+            echo "No changes detected"
+          fi
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        if: ${{ steps.commit-files.outputs.hasChange == 'true' }}
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ github.ref }}
